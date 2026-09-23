@@ -182,6 +182,15 @@ class VerilogInput(BaseModel):
     spec: str = Field(description="Natural-language hardware spec, e.g. '4-bit synchronous up-counter with async reset'")
 
 
+class VerilogOutput(BaseModel):
+    verified: bool = Field(description="True if the simulation passed")
+    iterations: int = Field(description="Number of generate/simulate attempts")
+    design: str = Field(description="Final Verilog design module")
+    testbench: str = Field(description="Final Verilog testbench")
+    last_simulator_output: Optional[str] = Field(default=None, description="Raw iverilog/vvp output from the final attempt")
+    critique_history: List[str] = Field(default_factory=list, description="Critic notes from each failed attempt")
+
+
 def _init_state(x) -> dict:
     spec = x["spec"] if isinstance(x, dict) else x.spec
     return {
@@ -190,32 +199,22 @@ def _init_state(x) -> dict:
     }
 
 
-def _format_output(state: dict) -> str:
-    """Clean markdown - the playground renders it, so fenced code blocks get
-    syntax highlighting like a normal code viewer."""
-    status = "**VERIFIED** — simulation passed" if state.get("passed") else \
-        f"**NOT VERIFIED** — failed after {state.get('iteration', 0)} attempt(s)"
-
-    parts = [
-        status,
-        "### Design",
-        "```verilog\n" + (state.get("code") or "").strip() + "\n```",
-        "### Testbench",
-        "```verilog\n" + (state.get("testbench") or "").strip() + "\n```",
-    ]
-    if not state.get("passed"):
-        parts += [
-            "### Last simulator output",
-            "```\n" + (state.get("last_error") or "").strip() + "\n```",
-        ]
-    return "\n\n".join(parts)
+def _format_output(state: dict) -> VerilogOutput:
+    return VerilogOutput(
+        verified=state.get("passed", False),
+        iterations=state.get("iteration", 0),
+        design=(state.get("code") or "").strip(),
+        testbench=(state.get("testbench") or "").strip(),
+        last_simulator_output=None if state.get("passed") else (state.get("last_error") or "").strip(),
+        critique_history=state.get("critique_history", []),
+    )
 
 
 verilog_chain = (
     RunnableLambda(_init_state)
     | verilog_app
     | RunnableLambda(_format_output)
-).with_types(input_type=VerilogInput, output_type=str)
+).with_types(input_type=VerilogInput, output_type=VerilogOutput)
 
 # --- 8. FASTAPI APP ---
 app = FastAPI()
