@@ -1,8 +1,8 @@
-fastapi
-uvicorn
-langserve
+langgraph
 langchain-core
 langchain-google-genai
-langgraph
-sse_starlette
+langserve
+fastapi
+uvicorn
 pydantic
+sse_starlette
