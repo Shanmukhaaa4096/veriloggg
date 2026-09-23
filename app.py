@@ -133,38 +133,51 @@ def generator_node(state: VerilogState) -> dict:
 
 def simulator_node(state: VerilogState) -> dict:
     """Compiles + runs the design and testbench with Icarus Verilog. Real execution,
-    not an LLM guess: iverilog compiles, vvp simulates, we read the actual output."""
+    not an LLM guess: iverilog compiles, vvp simulates, we read the actual output.
+    Wrapped so a missing/broken toolchain reports a clear error instead of crashing
+    the node and silently dropping the whole response."""
     design_name = _extract_module_name(state["code"], "design")
     tb_name = _extract_module_name(state["testbench"], "tb")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        design_path = os.path.join(tmp, f"{design_name}.v")
-        tb_path = os.path.join(tmp, f"{tb_name}.v")
-        out_path = os.path.join(tmp, "sim.out")
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            design_path = os.path.join(tmp, f"{design_name}.v")
+            tb_path = os.path.join(tmp, f"{tb_name}.v")
+            out_path = os.path.join(tmp, "sim.out")
 
-        with open(design_path, "w") as f:
-            f.write(state["code"] or "")
-        with open(tb_path, "w") as f:
-            f.write(state["testbench"] or "")
+            with open(design_path, "w") as f:
+                f.write(state["code"] or "")
+            with open(tb_path, "w") as f:
+                f.write(state["testbench"] or "")
 
-        compile_proc = subprocess.run(
-            ["iverilog", "-o", out_path, design_path, tb_path],
-            capture_output=True, text=True, timeout=30,
-        )
-        if compile_proc.returncode != 0:
-            return {"passed": False, "last_error": f"COMPILE ERROR:\n{compile_proc.stderr}"}
+            compile_proc = subprocess.run(
+                ["iverilog", "-o", out_path, design_path, tb_path],
+                capture_output=True, text=True, timeout=30,
+            )
+            if compile_proc.returncode != 0:
+                return {"passed": False, "last_error": f"COMPILE ERROR:\n{compile_proc.stderr}"}
 
-        run_proc = subprocess.run(
-            ["vvp", out_path], capture_output=True, text=True, timeout=30,
-        )
-        output = run_proc.stdout + run_proc.stderr
+            run_proc = subprocess.run(
+                ["vvp", out_path], capture_output=True, text=True, timeout=30,
+            )
+            output = run_proc.stdout + run_proc.stderr
 
-        if run_proc.returncode != 0:
-            return {"passed": False, "last_error": f"SIMULATION ERROR:\n{output}"}
-        if "TEST FAILED" in output or "TEST PASSED" not in output:
-            return {"passed": False, "last_error": f"TESTBENCH REPORT:\n{output}"}
+            if run_proc.returncode != 0:
+                return {"passed": False, "last_error": f"SIMULATION ERROR:\n{output}"}
+            if "TEST FAILED" in output or "TEST PASSED" not in output:
+                return {"passed": False, "last_error": f"TESTBENCH REPORT:\n{output}"}
+    except FileNotFoundError as e:
+        return {
+            "passed": False,
+            "last_error": f"TOOLCHAIN NOT FOUND: {e}. iverilog/vvp must be installed "
+                           "in this environment (see deployment comment at top of file).",
+        }
+    except subprocess.TimeoutExpired:
+        return {"passed": False, "last_error": "SIMULATION TIMED OUT after 30s."}
+    except Exception as e:
+        return {"passed": False, "last_error": f"SIMULATOR NODE ERROR: {type(e).__name__}: {e}"}
 
-        return {"passed": True, "last_error": output}
+    return {"passed": True, "last_error": output}
 
 
 def critic_node(state: VerilogState) -> dict:
