@@ -191,34 +191,24 @@ def _init_state(x) -> dict:
 
 
 def _format_output(state: dict) -> str:
-    """Plain, clearly separated text. The LangServe playground shows raw text,
-    not rendered markdown, so no bold/fence syntax here - just clean sections."""
-    status = "VERIFIED - simulation passed" if state.get("passed") else \
-        f"NOT VERIFIED - failed after {state.get('iteration', 0)} attempt(s)"
+    """Clean markdown - the playground renders it, so fenced code blocks get
+    syntax highlighting like a normal code viewer."""
+    status = "**VERIFIED** — simulation passed" if state.get("passed") else \
+        f"**NOT VERIFIED** — failed after {state.get('iteration', 0)} attempt(s)"
 
-    divider = "-" * 60
     parts = [
-        divider,
-        f"STATUS: {status}",
-        divider,
-        "DESIGN",
-        divider,
-        (state.get("code") or "").strip(),
-        "",
-        divider,
-        "TESTBENCH",
-        divider,
-        (state.get("testbench") or "").strip(),
+        status,
+        "### Design",
+        "```verilog\n" + (state.get("code") or "").strip() + "\n```",
+        "### Testbench",
+        "```verilog\n" + (state.get("testbench") or "").strip() + "\n```",
     ]
     if not state.get("passed"):
         parts += [
-            "",
-            divider,
-            "LAST SIMULATOR OUTPUT",
-            divider,
-            (state.get("last_error") or "").strip(),
+            "### Last simulator output",
+            "```\n" + (state.get("last_error") or "").strip() + "\n```",
         ]
-    return "\n".join(parts)
+    return "\n\n".join(parts)
 
 
 verilog_chain = (
