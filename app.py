@@ -161,9 +161,10 @@ class VerilogSpecInput(BaseModel):
     spec: str
 
 
-def to_state(inp: VerilogSpecInput) -> AgentState:
+def to_state(inp) -> AgentState:
+    spec = inp["spec"] if isinstance(inp, dict) else inp.spec
     return {
-        "spec": inp.spec,
+        "spec": spec,
         "code": None,
         "testbench": None,
         "iteration": 0,
