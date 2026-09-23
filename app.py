@@ -51,6 +51,20 @@ def _extract_module_name(code: str, default: str) -> str:
     return m.group(1) if m else default
 
 
+def _extract_text(content) -> str:
+    """response.content can be a plain string or a list of blocks (thinking +
+    text) depending on the model. Pull out just the text, skip 'thinking'."""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for block in content or []:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict) and block.get("type") != "thinking":
+            parts.append(block.get("text", ""))
+    return "\n".join(parts)
+
+
 # --- 4. GRAPH NODES ---
 def generator_node(state: VerilogState) -> dict:
     """Writes (or revises, using the last critique) the Verilog design + testbench."""
@@ -77,7 +91,7 @@ def generator_node(state: VerilogState) -> dict:
         )
 
     response = llm.invoke(prompt)
-    text = response.content if isinstance(response.content, str) else str(response.content)
+    text = _extract_text(response.content)
 
     blocks = re.findall(r"```(?:verilog)?\n(.*?)```", text, re.DOTALL)
     if len(blocks) >= 2:
@@ -136,7 +150,7 @@ def critic_node(state: VerilogState) -> dict:
         f"Simulator output:\n{state['last_error']}"
     )
     response = llm.invoke(prompt)
-    critique = response.content if isinstance(response.content, str) else str(response.content)
+    critique = _extract_text(response.content)
     return {"critique_history": state["critique_history"] + [critique]}
 
 
@@ -176,22 +190,27 @@ def _init_state(x) -> dict:
     }
 
 
-def _format_output(state: dict) -> dict:
-    return {
-        "code": state.get("code"),
-        "testbench": state.get("testbench"),
-        "verified": state.get("passed", False),
-        "iterations": state.get("iteration", 0),
-        "last_error": state.get("last_error"),
-        "critique_history": state.get("critique_history", []),
-    }
+def _format_output(state: dict) -> str:
+    """Single readable markdown string, chat-style, instead of a raw state dict."""
+    status = "✅ Verified (simulation passed)" if state.get("passed") else \
+        f"⚠️ Not verified after {state.get('iteration', 0)} attempts"
+
+    parts = [
+        f"**{status}**",
+        "```verilog\n" + (state.get("code") or "") + "\n```",
+        "**Testbench:**",
+        "```verilog\n" + (state.get("testbench") or "") + "\n```",
+    ]
+    if not state.get("passed"):
+        parts.append(f"**Last simulator output:**\n```\n{state.get('last_error') or ''}\n```")
+    return "\n\n".join(parts)
 
 
 verilog_chain = (
     RunnableLambda(_init_state)
     | verilog_app
     | RunnableLambda(_format_output)
-).with_types(input_type=VerilogInput, output_type=dict)
+).with_types(input_type=VerilogInput, output_type=str)
 
 # --- 8. FASTAPI APP ---
 app = FastAPI()
