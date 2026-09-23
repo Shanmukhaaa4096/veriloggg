@@ -191,19 +191,34 @@ def _init_state(x) -> dict:
 
 
 def _format_output(state: dict) -> str:
-    """Single readable markdown string, chat-style, instead of a raw state dict."""
-    status = "✅ Verified (simulation passed)" if state.get("passed") else \
-        f"⚠️ Not verified after {state.get('iteration', 0)} attempts"
+    """Plain, clearly separated text. The LangServe playground shows raw text,
+    not rendered markdown, so no bold/fence syntax here - just clean sections."""
+    status = "VERIFIED - simulation passed" if state.get("passed") else \
+        f"NOT VERIFIED - failed after {state.get('iteration', 0)} attempt(s)"
 
+    divider = "-" * 60
     parts = [
-        f"**{status}**",
-        "```verilog\n" + (state.get("code") or "") + "\n```",
-        "**Testbench:**",
-        "```verilog\n" + (state.get("testbench") or "") + "\n```",
+        divider,
+        f"STATUS: {status}",
+        divider,
+        "DESIGN",
+        divider,
+        (state.get("code") or "").strip(),
+        "",
+        divider,
+        "TESTBENCH",
+        divider,
+        (state.get("testbench") or "").strip(),
     ]
     if not state.get("passed"):
-        parts.append(f"**Last simulator output:**\n```\n{state.get('last_error') or ''}\n```")
-    return "\n\n".join(parts)
+        parts += [
+            "",
+            divider,
+            "LAST SIMULATOR OUTPUT",
+            divider,
+            (state.get("last_error") or "").strip(),
+        ]
+    return "\n".join(parts)
 
 
 verilog_chain = (
